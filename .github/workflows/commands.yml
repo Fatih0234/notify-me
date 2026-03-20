@@ -1,0 +1,43 @@
+name: Telegram Command Handler
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # poll every 5 minutes
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  handle-commands:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Poll and handle commands
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          X_REPO: ${{ vars.X_REPO || 'Fatih0234/x-botty' }}
+          YT_REPO: ${{ vars.YT_REPO || 'Fatih0234/youtube-competitor-tracker' }}
+        run: python src/commands.py
+
+      - name: Commit and push state.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          git add state.json
+          git diff --cached --quiet || git commit -m "chore: update command state [skip ci]"
+          git push
