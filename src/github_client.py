@@ -20,8 +20,19 @@ def get_latest_release_asset(repo, asset_name, token=None):
 
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     resp = requests.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    release = resp.json()
+
+    if resp.status_code == 404:
+        # No non-prerelease exists; fall back to most recent release (including pre-releases)
+        list_url = f"https://api.github.com/repos/{repo}/releases?per_page=1"
+        resp = requests.get(list_url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        releases = resp.json()
+        if not releases:
+            raise AssetNotFoundError(f"No releases found for {repo}")
+        release = releases[0]
+    else:
+        resp.raise_for_status()
+        release = resp.json()
 
     assets = release.get("assets", [])
     found = None
