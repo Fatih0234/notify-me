@@ -1,15 +1,18 @@
 import os
 import sys
+import base64
+import json
 import requests
 from state import load_state, save_state
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 GITHUB_API = "https://api.github.com"
+YOUTUBE_API = "https://www.googleapis.com/youtube/v3"
 
 COMMANDS = {
-    "/add-x":        ("x",  "add"),
-    "/remove-x":     ("x",  "remove"),
-    "/add-youtube":  ("yt", "add"),
+    "/add-x":          ("x",  "add"),
+    "/remove-x":       ("x",  "remove"),
+    "/add-youtube":    ("yt", "add"),
     "/remove-youtube": ("yt", "remove"),
 }
 
@@ -43,6 +46,30 @@ def get_updates(token, offset=None):
     return resp.json().get("result", [])
 
 
+def fetch_config(repo, gh_token):
+    """Fetch and parse config.json from a GitHub repo."""
+    url = f"{GITHUB_API}/repos/{repo}/contents/config.json"
+    headers = {
+        "Authorization": f"Bearer {gh_token}",
+        "Accept": "application/vnd.github+json",
+    }
+    resp = requests.get(url, headers=headers, timeout=15)
+    resp.raise_for_status()
+    content = base64.b64decode(resp.json()["content"]).decode("utf-8")
+    return json.loads(content)
+
+
+def youtube_channel_exists(handle, yt_api_key):
+    """Return True if a YouTube channel handle resolves to a real channel."""
+    resp = requests.get(
+        f"{YOUTUBE_API}/channels",
+        params={"part": "id", "forHandle": handle.lstrip("@"), "key": yt_api_key},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return len(resp.json().get("items", [])) > 0
+
+
 def trigger_workflow(repo, workflow_file, inputs, gh_token):
     url = f"{GITHUB_API}/repos/{repo}/actions/workflows/{workflow_file}/dispatches"
     headers = {
@@ -55,7 +82,7 @@ def trigger_workflow(repo, workflow_file, inputs, gh_token):
     resp.raise_for_status()
 
 
-def process_command(text, token, chat_id, gh_token, x_repo, yt_repo):
+def process_command(text, token, chat_id, gh_token, x_repo, yt_repo, yt_api_key):
     parts = text.strip().split(None, 1)
     cmd = parts[0].lower()
 
@@ -76,6 +103,20 @@ def process_command(text, token, chat_id, gh_token, x_repo, yt_repo):
 
     if source == "x":
         username = handle.lstrip("@")
+
+        try:
+            config = fetch_config(x_repo, gh_token)
+            tracked = [a.lower() for a in config.get("accounts", [])]
+            if action == "add" and username.lower() in tracked:
+                send(token, chat_id, f"@{username} is already being tracked.")
+                return
+            if action == "remove" and username.lower() not in tracked:
+                send(token, chat_id, f"@{username} is not in the tracking list.")
+                return
+        except Exception as e:
+            print(f"Warning: could not fetch X config for validation: {e}")
+            # Non-blocking — proceed with workflow trigger anyway
+
         trigger_workflow(
             x_repo, "manage-accounts.yml",
             {"action": action, "username": username},
@@ -86,6 +127,28 @@ def process_command(text, token, chat_id, gh_token, x_repo, yt_repo):
 
     elif source == "yt":
         channel = handle if handle.startswith("@") else f"@{handle}"
+
+        if action == "add" and yt_api_key:
+            try:
+                if not youtube_channel_exists(channel, yt_api_key):
+                    send(token, chat_id, f"{channel} was not found on YouTube. Please check the handle and try again.")
+                    return
+            except Exception as e:
+                print(f"Warning: could not validate YouTube channel existence: {e}")
+
+        try:
+            config = fetch_config(yt_repo, gh_token)
+            tracked = [c.lstrip("@").lower() for c in config.get("channels", [])]
+            channel_clean = channel.lstrip("@").lower()
+            if action == "add" and channel_clean in tracked:
+                send(token, chat_id, f"{channel} is already being tracked.")
+                return
+            if action == "remove" and channel_clean not in tracked:
+                send(token, chat_id, f"{channel} is not in the tracking list.")
+                return
+        except Exception as e:
+            print(f"Warning: could not fetch YT config for validation: {e}")
+
         trigger_workflow(
             yt_repo, "manage-channels.yml",
             {"action": action, "handle": channel},
@@ -101,6 +164,7 @@ def main():
     gh_token = os.environ.get("GH_PAT") or os.environ.get("GITHUB_TOKEN")
     x_repo = os.environ.get("X_REPO", "Fatih0234/x-botty")
     yt_repo = os.environ.get("YT_REPO", "Fatih0234/youtube-competitor-tracker")
+    yt_api_key = os.environ.get("YOUTUBE_API_KEY")
     state_path = os.environ.get("STATE_PATH", "state.json")
 
     if not token or not chat_id:
@@ -109,11 +173,13 @@ def main():
     if not gh_token:
         print("ERROR: GH_PAT is required to trigger workflows on other repos.")
         sys.exit(1)
+    if not yt_api_key:
+        print("WARNING: YOUTUBE_API_KEY not set — YouTube channel existence check disabled.")
 
     state = load_state(state_path)
     offset = state.get("last_command_update_id")
     if offset is not None:
-        offset += 1  # mark previous batch as acknowledged
+        offset += 1
 
     updates = get_updates(token, offset)
     if not updates:
@@ -140,7 +206,7 @@ def main():
 
         print(f"Processing command: {text!r}")
         try:
-            process_command(text, token, chat_id, gh_token, x_repo, yt_repo)
+            process_command(text, token, chat_id, gh_token, x_repo, yt_repo, yt_api_key)
             processed += 1
         except Exception as e:
             print(f"Error processing '{text}': {e}")

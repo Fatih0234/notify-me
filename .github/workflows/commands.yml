@@ -29,6 +29,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GH_PAT: ${{ secrets.GH_PAT }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           X_REPO: ${{ vars.X_REPO || 'Fatih0234/x-botty' }}
           YT_REPO: ${{ vars.YT_REPO || 'Fatih0234/youtube-competitor-tracker' }}
         run: python src/commands.py
