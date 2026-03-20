@@ -1,13 +1,14 @@
 def get_top_youtube_videos(conn, limit=5):
-    """Return top YouTube videos by computed viral score."""
+    """Return top YouTube videos by viral_score, split by Shorts vs long-form."""
     query = """
         SELECT v.youtube_video_id, v.title, v.is_short,
                v.view_count, v.like_count, v.comment_count,
-               c.title AS channel_name,
-               (v.like_count + v.comment_count * 2.0) / MAX(v.view_count, 1) AS viral_score
+               v.viral_score, v.viral_score_updated_at,
+               c.title AS channel_name
         FROM videos v
         JOIN channels c ON v.channel_id = c.id
-        ORDER BY viral_score DESC
+        WHERE v.viral_score IS NOT NULL
+        ORDER BY v.is_short ASC, v.viral_score DESC
         LIMIT ?
     """
     cursor = conn.cursor()

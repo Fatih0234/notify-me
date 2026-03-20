@@ -52,44 +52,65 @@ def build_message(x_posts, yt_videos, x_asset_info, yt_asset_info):
         likes = format_number(post.get("likes"))
         replies = format_number(post.get("replies"))
         rts = format_number(post.get("retweets"))
-        score = post.get("engagement_score")
+        score = post.get("viral_score")
         score_str = escape_md(f"{score:.4f}" if score is not None else "N/A")
+        view_mom = post.get("view_momentum")
+        eng_mom = post.get("engagement_momentum")
+        freshness = post.get("freshness")
+        view_mom_str = escape_md(f"{view_mom:.1f}/h" if view_mom is not None else "N/A")
+        eng_mom_str = escape_md(f"{eng_mom:.1f}/h" if eng_mom is not None else "N/A")
+        freshness_str = escape_md(f"{freshness:.2f}" if freshness is not None else "N/A")
 
         lines.append(f"*{i}\\. @{username}*")
         lines.append(text)
         lines.append(
             f"👁 {escape_md(views)} · ❤️ {escape_md(likes)} · 💬 {escape_md(replies)} · 🔁 {escape_md(rts)}"
         )
+        lines.append(
+            f"📈 {view_mom_str} views · ⚡ {eng_mom_str} eng · 🌱 freshness {freshness_str}"
+        )
         lines.append(f"Viral score: `{score_str}`")
         if url:
             lines.append(f"[View tweet]({url})")
         lines.append("")
 
-    # YouTube section
-    lines.append("*📺 Top YouTube Videos*")
-    lines.append("")
-    for i, video in enumerate(yt_videos, 1):
+    # YouTube section — long-form and Shorts rendered separately
+    long_form = [v for v in yt_videos if not v.get("is_short")]
+    shorts = [v for v in yt_videos if v.get("is_short")]
+
+    def render_yt_video(i, video):
         vid_id = video.get("youtube_video_id", "")
         title = escape_md(truncate(video.get("title", ""), 80))
         channel = escape_md(video.get("channel_name", "Unknown"))
-        is_short = video.get("is_short")
         views = format_number(video.get("view_count"))
         likes = format_number(video.get("like_count"))
         comments = format_number(video.get("comment_count"))
         score = video.get("viral_score")
         score_str = escape_md(f"{score:.4f}" if score is not None else "N/A")
-        short_label = " \\[Short\\]" if is_short else ""
         yt_url = f"https://youtube.com/watch?v={vid_id}" if vid_id else ""
 
-        lines.append(f"*{i}\\. {channel}*{short_label}")
-        lines.append(title)
-        lines.append(
+        out = []
+        out.append(f"*{i}\\. {channel}*")
+        out.append(title)
+        out.append(
             f"👁 {escape_md(views)} · ❤️ {escape_md(likes)} · 💬 {escape_md(comments)}"
         )
-        lines.append(f"Viral score: `{score_str}`")
+        out.append(f"Viral score: `{score_str}`")
         if yt_url:
-            lines.append(f"[Watch]({yt_url})")
+            out.append(f"[Watch]({yt_url})")
+        out.append("")
+        return out
+
+    lines.append("*📺 Top YouTube Videos*")
+    lines.append("")
+    for i, video in enumerate(long_form, 1):
+        lines.extend(render_yt_video(i, video))
+
+    if shorts:
+        lines.append("*🩳 Top YouTube Shorts*")
         lines.append("")
+        for i, video in enumerate(shorts, 1):
+            lines.extend(render_yt_video(i, video))
 
     # Footer
     x_ts = escape_md(x_asset_info.get("asset_updated_at", "N/A"))
