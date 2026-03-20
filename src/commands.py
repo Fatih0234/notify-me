@@ -20,8 +20,10 @@ HELP_TEXT = (
     "Available commands:\n"
     "/add-x @username — track an X account\n"
     "/remove-x @username — stop tracking an X account\n"
+    "/list-x — show all tracked X accounts\n"
     "/add-youtube @handle — track a YouTube channel\n"
-    "/remove-youtube @handle — stop tracking a YouTube channel"
+    "/remove-youtube @handle — stop tracking a YouTube channel\n"
+    "/list-youtube — show all tracked YouTube channels"
 )
 
 
@@ -88,6 +90,32 @@ def process_command(text, token, chat_id, gh_token, x_repo, yt_repo, yt_api_key)
 
     if cmd == "/help":
         send(token, chat_id, HELP_TEXT)
+        return
+
+    if cmd == "/list-x":
+        try:
+            config = fetch_config(x_repo, gh_token)
+            accounts = config.get("accounts", [])
+            if accounts:
+                body = "\n".join(f"@{a}" for a in accounts)
+                send(token, chat_id, f"Tracked X accounts ({len(accounts)}):\n{body}")
+            else:
+                send(token, chat_id, "No X accounts are currently tracked.")
+        except Exception as e:
+            send(token, chat_id, f"Error fetching X config: {e}")
+        return
+
+    if cmd == "/list-youtube":
+        try:
+            config = fetch_config(yt_repo, gh_token)
+            channels = config.get("channels", [])
+            if channels:
+                body = "\n".join(channels)
+                send(token, chat_id, f"Tracked YouTube channels ({len(channels)}):\n{body}")
+            else:
+                send(token, chat_id, "No YouTube channels are currently tracked.")
+        except Exception as e:
+            send(token, chat_id, f"Error fetching YouTube config: {e}")
         return
 
     if cmd not in COMMANDS:
